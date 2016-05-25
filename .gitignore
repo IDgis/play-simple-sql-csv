@@ -4,3 +4,5 @@ logs
 bin
 .project
 .cache-main
+.gradle
+build

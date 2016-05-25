@@ -1,0 +1,92 @@
+buildscript {
+	repositories {
+		jcenter()
+	}
+
+	dependencies {
+		classpath 'com.bmuschko:gradle-docker-plugin:2.6.5'
+		classpath 'org.ajoberstar:gradle-git:1.3.2'
+	}
+}
+
+import nl.idgis.gradle.play.PlayJavaPlugin
+import nl.idgis.gradle.docker.DockerPlugin
+
+
+apply plugin: 'org.ajoberstar.release-opinion'
+
+repositories {
+	mavenCentral ()
+	
+	// Add IDgis repositories:
+	maven {
+		name "idgis-public"
+		url "http://nexus.idgis.eu/content/groups/public/"
+		credentials {
+			username nexusUser 
+			password nexusPassword
+		}
+	}
+	maven {
+		name "idgis-restricted"
+		url "http://nexus.idgis.eu/content/groups/restricted/"
+		credentials {
+			username nexusUser 
+			password nexusPassword
+		}
+	}
+}
+
+// Configure gradle-git release procedure (https://github.com/ajoberstar/gradle-git):
+release {
+	grgit = org.ajoberstar.grgit.Grgit.open (file ("."))
+}
+
+apply plugin: 'eclipse'
+apply plugin: PlayJavaPlugin
+apply plugin: DockerPlugin
+
+ext {
+	scalaAbiVersion = '2.11'
+}
+
+docker {
+	url = "http://${dockerHost}:2375"
+}
+
+repositories {
+	ivy {
+		name "typesafe-ivy-release"
+		url "https://repo.typesafe.com/typesafe/ivy-releases"
+		layout "ivy"
+	}
+}
+
+dependencies {
+	// Play default dependencies (Scala version 2.11):
+	play "com.typesafe.play:play-java-jdbc_2.11:2.4.3"			// javaJdbc
+	play "com.typesafe.play:play-cache_2.11:2.4.3"				// cache
+	play "com.typesafe.play:play-java-ws_2.11:2.4.3"			// javaWs
+	play "com.typesafe.play:play-jdbc-evolutions_2.11:2.4.3"	// evolutions
+	play "nl.idgis.commons:commons-utils:0.0.14"
+	
+	// Geoportaal dependencies:
+	play "org.webjars:webjars-play_${scalaAbiVersion}:2.4.0-2"
+	play "org.postgresql:postgresql:9.4-1202-jdbc42"
+	play ("nl.idgis.sys:provisioning-registration:1.1.3-SNAPSHOT") {
+		exclude module: "ch.qos.logback"
+		exclude module: "logback-classic"
+	}
+}
+	
+model {
+	components {
+		play {
+			platform play: '2.4.3', java: '1.8'
+			
+			// The injected routes generator is required to be compatible with
+			// Play version 2.4 and up. 
+			injectedRoutesGenerator = true
+		}
+	}
+}
