@@ -20,7 +20,7 @@ with metadata_as_xml as (
 			where d.source_dataset_id = sd.id and not e.confidential) in_publieke_service
 	from publisher.source_dataset_metadata sdm
 	join publisher.source_dataset sd on sd.id = sdm.source_dataset_id
-)
+) 
 select
 	id,
 	identification,
@@ -87,5 +87,5 @@ select
 		then 'Ja' 
 		else 'Nee'
 	end feitelijk_onterecht_publiek,
-	array_to_string(layer_names, '|') layer_names
+	array_to_string(layer_names, '|') layer_names 
 from metadata_as_xml;
