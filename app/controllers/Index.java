@@ -15,6 +15,7 @@ import play.db.DB;
 import play.mvc.Controller;
 import play.mvc.Result;
 import play.Configuration;
+import play.Logger;
 
 public class Index extends Controller {
 	
@@ -26,6 +27,8 @@ public class Index extends Controller {
 	public Index(Configuration config) {
 		filenamePrefix = config.getString("output.filenamePrefix");		
 		String sqlFile = config.getString("sql.file");
+		
+		Logger.info("Using configuration: filenamePrefix=" + filenamePrefix + ", sqlFile=" + sqlFile);
 		
 		StringBuilder sqlBuilder = new StringBuilder();
 		
