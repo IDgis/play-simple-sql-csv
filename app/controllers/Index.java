@@ -35,7 +35,9 @@ public class Index extends Controller {
 		try(BufferedReader br = new BufferedReader(new FileReader(sqlFile))) {
 			String line;
 			while ((line = br.readLine()) != null) {
-				sqlBuilder.append(line);
+				sqlBuilder
+					.append(" ")
+					.append(line.trim());
 			}
 		} catch(RuntimeException e) {
 			throw e;
