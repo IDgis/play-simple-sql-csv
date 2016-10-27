@@ -87,5 +87,8 @@ select
 		then 'Ja' 
 		else 'Nee'
 	end feitelijk_onterecht_publiek,
-	array_to_string(layer_names, '|') layer_names 
-from metadata_as_xml;
+	array_to_string(layer_names, '|') layer_names,
+	(select string_agg(identification || '|' || coalesce(http_status::text, '?'), ' ')
+	from publisher.source_dataset_metadata_attachment_error	
+	where source_dataset_id = max.id) http_errors
+from metadata_as_xml max;
