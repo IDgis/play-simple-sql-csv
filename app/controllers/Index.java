@@ -20,8 +20,11 @@ public class Index extends Controller {
 	
 	private final String sql;
 	
+	private final String filenamePrefix;
+	
 	@Inject
 	public Index(Configuration config) {
+		filenamePrefix = config.getString("output.filenamePrefix");		
 		String sqlFile = config.getString("sql.file");
 		
 		StringBuilder sqlBuilder = new StringBuilder();
@@ -44,7 +47,7 @@ public class Index extends Controller {
 		LocalDate ld = LocalDate.now();
 		
 		response().setContentType("text/csv");
-		response().setHeader("Content-Disposition", "attachment; filename=\"rapport_geodata_" + ld.getYear() + ld.getMonthOfYear() + 
+		response().setHeader("Content-Disposition", "attachment; filename=\"" + filenamePrefix + ld.getYear() + ld.getMonthOfYear() + 
 				ld.getDayOfMonth() + ".csv\"");
 		
 		StringBuilder csv = new StringBuilder();			
