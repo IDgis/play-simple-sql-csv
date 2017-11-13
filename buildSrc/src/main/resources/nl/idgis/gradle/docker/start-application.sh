@@ -25,4 +25,6 @@ export JAVA_OPTS
 echo "Running command: $CMD"
 echo "ParameterS: $JAVA_OPTS"
 
+/opt/dataset-transformation.sh
+
 exec $CMD
