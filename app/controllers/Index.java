@@ -6,16 +6,16 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 import javax.inject.Inject;
 
-import org.joda.time.LocalDate;
-
+import play.Configuration;
+import play.Logger;
 import play.db.DB;
 import play.mvc.Controller;
 import play.mvc.Result;
-import play.Configuration;
-import play.Logger;
 
 public class Index extends Controller {
 	
@@ -25,7 +25,7 @@ public class Index extends Controller {
 	
 	@Inject
 	public Index(Configuration config) {
-		filenamePrefix = config.getString("output.filenamePrefix");		
+		filenamePrefix = config.getString("output.filenamePrefix");	
 		String sqlFile = config.getString("sql.file");
 		
 		Logger.info("Using configuration: filenamePrefix=" + filenamePrefix + ", sqlFile=" + sqlFile);
@@ -49,17 +49,19 @@ public class Index extends Controller {
 	}
 
 	public Result index() throws Exception {
-		LocalDate ld = LocalDate.now();
+		LocalDateTime ldt = LocalDateTime.now();
+		String dateTime = ldt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_hh-mm"));
 		
 		response().setContentType("text/csv");
-		response().setHeader("Content-Disposition", "attachment; filename=\"" + filenamePrefix + ld.getYear() + ld.getMonthOfYear() + 
-				ld.getDayOfMonth() + ".csv\"");
+		response().setHeader(
+				"Content-Disposition", "attachment; filename=\"" + 
+				filenamePrefix + dateTime + ".csv\"");
 		
-		StringBuilder csv = new StringBuilder();			
+		StringBuilder csv = new StringBuilder();
 			
 		try(
 			Connection connection = DB.getConnection(false);
-			PreparedStatement stmt = connection.prepareStatement(sql);	
+			PreparedStatement stmt = connection.prepareStatement(sql);
 		) {
 			try(
 				ResultSet rs = stmt.executeQuery();	
