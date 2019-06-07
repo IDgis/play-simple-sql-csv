@@ -50,7 +50,7 @@ public class Index extends Controller {
 
 	public Result index() throws Exception {
 		LocalDateTime ldt = LocalDateTime.now();
-		String dateTime = ldt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_hh-mm"));
+		String dateTime = ldt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
 		
 		response().setContentType("text/csv");
 		response().setHeader(
