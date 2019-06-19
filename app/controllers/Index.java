@@ -24,23 +24,30 @@ import play.mvc.Result;
 
 public class Index extends Controller {
 	
-	private final String sql;
+	private String whereClause;
 	
 	private final String filenamePrefix;
 	
+	private final String sqlTemplate;
+	
 	@Inject
 	public Index(Configuration config) {
-		filenamePrefix = config.getString("output.filenamePrefix");	
+		whereClause = config.getString("sql.whereClause");
+		if(whereClause != null) whereClause = whereClause.trim();
+		
+		filenamePrefix = config.getString("output.filenamePrefix");
 		String sqlFile = config.getString("sql.file");
 		
 		Logger.info("Using configuration: filenamePrefix=" + filenamePrefix + ", sqlFile=" + sqlFile);
 		
-		StringBuilder sqlBuilder = new StringBuilder();
+		StringBuilder sqlTemplateBuilder = new StringBuilder();
 		
 		try(BufferedReader br = new BufferedReader(new FileReader(sqlFile))) {
 			String line;
 			while ((line = br.readLine()) != null) {
-				sqlBuilder
+				if(line.contains("%WHERE_CLAUSE%")) line = whereClause;
+				
+				sqlTemplateBuilder
 					.append(" ")
 					.append(line.trim());
 			}
@@ -50,17 +57,17 @@ public class Index extends Controller {
 			throw new RuntimeException("couldn't read sql file", e);
 		}
 		
-		sql = sqlBuilder.toString();
+		sqlTemplate = sqlTemplateBuilder.toString();
 	}
 
 	public Result index() {
-		LocalDateTime ldt = LocalDateTime.now();
-		String dateTime = ldt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
+		LocalDateTime now = LocalDateTime.now();
+		String dateTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
 		
-		response().setContentType("text/csv; charset=utf-8");
-		response().setHeader(
-				"Content-Disposition", "attachment; filename=\"" + 
-				filenamePrefix + dateTime + ".csv\"");
+		String where = request().getQueryString("where");
+		
+		String sql = sqlTemplate;
+		if(where == null && whereClause != null) sql = sqlTemplate.replace(whereClause, "");
 		
 		ByteArrayOutputStream baos = null;
 		
@@ -68,6 +75,8 @@ public class Index extends Controller {
 			Connection connection = DB.getConnection(false);
 			PreparedStatement stmt = connection.prepareStatement(sql);
 		) {
+			if(where != null && whereClause != null) stmt.setString(1, where);
+			
 			try(
 				ResultSet rs = stmt.executeQuery();	
 			) {
@@ -120,6 +129,12 @@ public class Index extends Controller {
 		if(baos == null) return internalServerError();
 		
 		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+		
+		response().setContentType("text/csv; charset=utf-8");
+		response().setHeader(
+				"Content-Disposition", "attachment; filename=\"" + 
+				filenamePrefix + dateTime + ".csv\"");
+		
 		return ok(bais).as("UTF-8").as("text/csv");
 	}
 }
