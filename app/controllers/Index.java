@@ -1,11 +1,16 @@
 package controllers;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileReader;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -48,17 +53,17 @@ public class Index extends Controller {
 		sql = sqlBuilder.toString();
 	}
 
-	public Result index() throws Exception {
+	public Result index() {
 		LocalDateTime ldt = LocalDateTime.now();
 		String dateTime = ldt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
 		
-		response().setContentType("text/csv");
+		response().setContentType("text/csv; charset=utf-8");
 		response().setHeader(
 				"Content-Disposition", "attachment; filename=\"" + 
 				filenamePrefix + dateTime + ".csv\"");
 		
-		StringBuilder csv = new StringBuilder();
-			
+		ByteArrayOutputStream baos = null;
+		
 		try(
 			Connection connection = DB.getConnection(false);
 			PreparedStatement stmt = connection.prepareStatement(sql);
@@ -66,39 +71,55 @@ public class Index extends Controller {
 			try(
 				ResultSet rs = stmt.executeQuery();	
 			) {
+				baos = new ByteArrayOutputStream();
+				
+				StringBuilder header = new StringBuilder();
 				ResultSetMetaData rsm = rs.getMetaData();
 				for(Integer i = 1; i < rsm.getColumnCount() + 1; i++) {
-					csv.append("\"" + rsm.getColumnName(i) + "\";");
+					header.append("\"" + rsm.getColumnName(i) + "\";");
 				}
-
-				csv.append(System.lineSeparator());
-
+				
+				baos.write(StandardCharsets.UTF_8.encode(header.toString()).array());
+				baos.write(System.lineSeparator().getBytes());
+				
 				while(rs.next()) {	
+					StringBuilder line = new StringBuilder();
+					
 					for(Integer i = 1; i < rsm.getColumnCount() + 1; i++) {
 						Object o = rs.getObject(i);
 						if(o instanceof String) {
 							String str = (String) o;
 							String finalStr = "";
-
+							
 							if(str.endsWith("\"")) {
 								finalStr = str + "\"";
 							} else {
 								finalStr = str;
 							}
-
-							csv.append("\"" + finalStr.replaceAll("[\\t\\n\\r]", " ") + "\";");
+							
+							line.append("\"" + finalStr.replaceAll("[\\t\\n\\r]", " ") + "\";");
 						} else if(o == null) {
-							csv.append("\"" + "" + "\";");
+							line.append("\"" + "" + "\";");
 						} else {
-							csv.append("\"" + o + "\";");
+							line.append("\"" + o + "\";");
 						}
 					}
-
-					csv.append(System.lineSeparator());
+					
+					baos.write(StandardCharsets.UTF_8.encode(line.toString()).array());
+					baos.write(System.lineSeparator().getBytes());
 				}
+			} finally {
+				if(baos != null) baos.close();
 			}
+		} catch(IOException ioe) {
+			ioe.printStackTrace();
+		} catch(SQLException sqle) {
+			sqle.printStackTrace();
 		}
 		
-		return ok(csv.toString().getBytes());
+		if(baos == null) return internalServerError();
+		
+		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+		return ok(bais).as("UTF-8").as("text/csv");
 	}
 }
