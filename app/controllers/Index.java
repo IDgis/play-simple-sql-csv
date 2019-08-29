@@ -88,7 +88,7 @@ public class Index extends Controller {
 					header.append("\"" + rsm.getColumnName(i) + "\";");
 				}
 				
-				baos.write(StandardCharsets.UTF_8.encode(header.toString()).array());
+				baos.write(header.toString().getBytes(StandardCharsets.UTF_8));
 				baos.write(System.lineSeparator().getBytes());
 				
 				while(rs.next()) {	
@@ -114,7 +114,7 @@ public class Index extends Controller {
 						}
 					}
 					
-					baos.write(StandardCharsets.UTF_8.encode(line.toString()).array());
+					baos.write(line.toString().getBytes(StandardCharsets.UTF_8));
 					baos.write(System.lineSeparator().getBytes());
 				}
 			} finally {
