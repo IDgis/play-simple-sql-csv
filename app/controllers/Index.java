@@ -45,7 +45,7 @@ public class Index extends Controller {
 		try(BufferedReader br = new BufferedReader(new FileReader(sqlFile))) {
 			String line;
 			while ((line = br.readLine()) != null) {
-				if(line.contains("%WHERE_CLAUSE%")) line = whereClause;
+				if(line.contains("%WHERE_CLAUSE%")) line = line.replace("%WHERE_CLAUSE%", whereClause);
 				
 				sqlTemplateBuilder
 					.append(" ")
@@ -64,10 +64,10 @@ public class Index extends Controller {
 		LocalDateTime now = LocalDateTime.now();
 		String dateTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
 		
-		String where = request().getQueryString("where");
+		String whereParam = request().getQueryString("where");
 		
 		String sql = sqlTemplate;
-		if(where == null && whereClause != null) sql = sqlTemplate.replace(whereClause, "");
+		if(whereParam == null && whereClause != null) sql = sqlTemplate.replace(whereClause, "");
 		
 		ByteArrayOutputStream baos = null;
 		
@@ -75,7 +75,7 @@ public class Index extends Controller {
 			Connection connection = DB.getConnection(false);
 			PreparedStatement stmt = connection.prepareStatement(sql);
 		) {
-			if(where != null && whereClause != null) stmt.setString(1, where);
+			if(whereParam != null && whereClause != null) stmt.setString(1, whereParam);
 			
 			try(
 				ResultSet rs = stmt.executeQuery();	
