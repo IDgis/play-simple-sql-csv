@@ -1,11 +1,11 @@
 package controllers;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -13,6 +13,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 
 import javax.inject.Inject;
 
@@ -59,7 +60,7 @@ public class Index extends Controller {
 		
 		sqlTemplate = sqlTemplateBuilder.toString();
 	}
-
+	
 	public Result index() {
 		LocalDateTime now = LocalDateTime.now();
 		String dateTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
@@ -69,72 +70,69 @@ public class Index extends Controller {
 		String sql = sqlTemplate;
 		if(whereParam == null && whereClause != null) sql = sqlTemplate.replace(whereClause, "");
 		
-		ByteArrayOutputStream baos = null;
+		String uuid = UUID.randomUUID().toString();
+		String filePathString = "/opt/csvs/" + uuid + ".csv";
 		
 		try(
 			Connection connection = DB.getConnection(false);
 			PreparedStatement stmt = connection.prepareStatement(sql);
+			BufferedWriter writer = new BufferedWriter(new FileWriter(filePathString));
 		) {
 			if(whereParam != null && whereClause != null) stmt.setString(1, whereParam);
 			
-			try(
-				ResultSet rs = stmt.executeQuery();	
-			) {
-				baos = new ByteArrayOutputStream();
-				
-				StringBuilder header = new StringBuilder();
-				ResultSetMetaData rsm = rs.getMetaData();
-				for(Integer i = 1; i < rsm.getColumnCount() + 1; i++) {
-					header.append("\"" + rsm.getColumnName(i) + "\";");
-				}
-				
-				baos.write(header.toString().getBytes(StandardCharsets.UTF_8));
-				baos.write(System.lineSeparator().getBytes());
-				
-				while(rs.next()) {	
-					StringBuilder line = new StringBuilder();
-					
-					for(Integer i = 1; i < rsm.getColumnCount() + 1; i++) {
-						Object o = rs.getObject(i);
-						if(o instanceof String) {
-							String str = (String) o;
-							String finalStr = "";
-							
-							if(str.endsWith("\"")) {
-								finalStr = str + "\"";
-							} else {
-								finalStr = str;
-							}
-							
-							line.append("\"" + finalStr.replaceAll("[\\t\\n\\r]", " ") + "\";");
-						} else if(o == null) {
-							line.append("\"" + "" + "\";");
-						} else {
-							line.append("\"" + o + "\";");
-						}
-					}
-					
-					baos.write(line.toString().getBytes(StandardCharsets.UTF_8));
-					baos.write(System.lineSeparator().getBytes());
-				}
-			} finally {
-				if(baos != null) baos.close();
+			stmt.setFetchSize(100000);
+			
+			try(ResultSet rs = stmt.executeQuery()) {
+				handleResultSet(rs, writer);
 			}
-		} catch(IOException ioe) {
-			ioe.printStackTrace();
 		} catch(SQLException sqle) {
 			sqle.printStackTrace();
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
 		}
-		
-		if(baos == null) return internalServerError();
-		
-		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
 		
 		response().setContentType("text/csv; charset=utf-8");
 		response().setHeader(
 				"Content-Disposition", "attachment; filename=\"" + 
 				filenamePrefix + dateTime + ".csv\"");
 		
-		return ok(bais).as("UTF-8").as("text/csv");
+		return ok(new File(filePathString)).as("UTF-8").as("text/csv");
+	}
+	
+	private void handleResultSet(ResultSet rs, BufferedWriter writer) throws SQLException, IOException {
+		ResultSetMetaData rsm = rs.getMetaData();
+		for(Integer i = 1; i < rsm.getColumnCount() + 1; i++) {
+			writer.write("\"" + rsm.getColumnName(i) + "\";");
+		}
+		
+		writer.write(System.lineSeparator());
+		
+		while(rs.next()) {	
+			for(Integer i = 1; i < rsm.getColumnCount() + 1; i++) {
+				Object o = rs.getObject(i);
+				writeLine(o, writer);
+			}
+			
+			writer.write(System.lineSeparator());
+		}
+	}
+	
+	private void writeLine(Object o, BufferedWriter writer) throws IOException {
+		if(o instanceof String) {
+			String text = (String) o;
+			
+			if(text.endsWith("\"")) {
+				text = text + "\"";
+			}
+			
+			text = "\"" + text.replaceAll("[\\t\\n\\r]", " ") + "\";";
+			writer.write(text);
+		} else if(o == null) {
+			String text = "\"" + "" + "\";";
+			writer.write(text);
+		} else {
+			String text = "\"" + o + "\";";
+			writer.write(text);
+		}
 	}
 }
