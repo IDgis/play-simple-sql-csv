@@ -6,14 +6,23 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 
@@ -25,6 +34,8 @@ import play.mvc.Result;
 
 public class Index extends Controller {
 	
+	private final String timeZone;
+	
 	private String whereClause;
 	
 	private final String filenamePrefix;
@@ -33,6 +44,9 @@ public class Index extends Controller {
 	
 	@Inject
 	public Index(Configuration config) {
+		timeZone = config.getString("app.timezone");
+		Logger.info("time zone set for app is: " + timeZone);
+		
 		whereClause = config.getString("sql.whereClause");
 		if(whereClause != null) whereClause = whereClause.trim();
 		
@@ -59,6 +73,59 @@ public class Index extends Controller {
 		}
 		
 		sqlTemplate = sqlTemplateBuilder.toString();
+		
+		final Runnable removeFiles = () -> {
+			try {
+				removeRedundantFiles();
+			} catch(Exception e) {
+				e.printStackTrace();
+			}
+		};
+		
+		final ScheduledFuture<?> removeFilesHandle =
+				Executors.newScheduledThreadPool(1)
+					.scheduleAtFixedRate(removeFiles, 1, 10, TimeUnit.MINUTES);
+	}
+	
+	private void removeRedundantFiles() {
+		Logger.info("checking redundant files...");
+		Path list = Paths.get("/opt/csvs");
+		try {
+			Files.list(list)
+				.filter(path -> checkAgeOfFile(path))
+				.forEach(path -> removeRedundantFile(path));
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
+	}
+	
+	private boolean checkAgeOfFile(Path path) {
+		try {
+			ZonedDateTime fileTime = ZonedDateTime.ofInstant(
+					Files.getLastModifiedTime(path).toInstant(), ZoneId.of(timeZone));
+			
+			ZonedDateTime now = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of(timeZone));
+			
+			Duration d = Duration.between(fileTime, now);
+			long ageOfFileInMinutes = d.toMinutes();
+			
+			Logger.info("file " + path.getFileName() + " is " + ageOfFileInMinutes + " minutes old");
+			
+			return ageOfFileInMinutes > 15;
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+			return false;
+		}
+	}
+	
+	private void removeRedundantFile(Path path) {
+		try {
+			Logger.info("file to be removed: " + path.getFileName());
+			
+			Files.delete(path);
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
 	}
 	
 	public Result index() {
@@ -72,6 +139,7 @@ public class Index extends Controller {
 		
 		String uuid = UUID.randomUUID().toString();
 		String filePathString = "/opt/csvs/" + uuid + ".csv";
+		Logger.info("path of file to be written: " + filePathString);
 		
 		try(
 			Connection connection = DB.getConnection(false);
