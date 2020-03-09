@@ -50,6 +50,8 @@ public class Index extends Controller {
 		whereClause = config.getString("sql.whereClause");
 		if(whereClause != null) whereClause = whereClause.trim();
 		
+		Logger.info("whereClause: " + whereClause);
+		
 		filenamePrefix = config.getString("output.filenamePrefix");
 		String sqlFile = config.getString("sql.file");
 		
@@ -84,7 +86,7 @@ public class Index extends Controller {
 		
 		final ScheduledFuture<?> removeFilesHandle =
 				Executors.newScheduledThreadPool(1)
-					.scheduleAtFixedRate(removeFiles, 1, 10, TimeUnit.MINUTES);
+					.scheduleAtFixedRate(removeFiles, 1, 30, TimeUnit.MINUTES);
 	}
 	
 	private void removeRedundantFiles() {
@@ -92,14 +94,14 @@ public class Index extends Controller {
 		Path list = Paths.get("/opt/csvs");
 		try {
 			Files.list(list)
-				.filter(path -> checkAgeOfFile(path))
+				.filter(path -> fileShouldBeRemoved(path))
 				.forEach(path -> removeRedundantFile(path));
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 		}
 	}
 	
-	private boolean checkAgeOfFile(Path path) {
+	private boolean fileShouldBeRemoved(Path path) {
 		try {
 			ZonedDateTime fileTime = ZonedDateTime.ofInstant(
 					Files.getLastModifiedTime(path).toInstant(), ZoneId.of(timeZone));
@@ -111,7 +113,7 @@ public class Index extends Controller {
 			
 			Logger.info("file " + path.getFileName() + " is " + ageOfFileInMinutes + " minutes old");
 			
-			return ageOfFileInMinutes > 15;
+			return ageOfFileInMinutes > 60;
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 			return false;
@@ -132,10 +134,16 @@ public class Index extends Controller {
 		LocalDateTime now = LocalDateTime.now();
 		String dateTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
 		
-		String whereParam = request().getQueryString("where");
+		String dateSinceParam = request().getQueryString("date_since");
+		String dateBeforeParam = request().getQueryString("date_before");
+		
+		Logger.info("dateSinceParam: " + dateSinceParam);
+		Logger.info("dateBeforeParam: " + dateBeforeParam);
 		
 		String sql = sqlTemplate;
-		if(whereParam == null && whereClause != null) sql = sqlTemplate.replace(whereClause, "");
+		if((dateSinceParam == null || dateBeforeParam == null) && whereClause != null) {
+			sql = sqlTemplate.replace(whereClause, "");
+		}
 		
 		String uuid = UUID.randomUUID().toString();
 		String filePathString = "/opt/csvs/" + uuid + ".csv";
@@ -146,12 +154,18 @@ public class Index extends Controller {
 			PreparedStatement stmt = connection.prepareStatement(sql);
 			BufferedWriter writer = new BufferedWriter(new FileWriter(filePathString));
 		) {
-			if(whereParam != null && whereClause != null) stmt.setString(1, whereParam);
+			Logger.info("auto commit: " + connection.getAutoCommit());
+			
+			if(dateSinceParam != null && dateBeforeParam != null && whereClause != null) {
+				stmt.setString(1, dateSinceParam);
+				stmt.setString(2, dateBeforeParam);
+			}
 			
 			stmt.setFetchSize(100000);
 			
+			Logger.info("executing query for: " + uuid);
 			try(ResultSet rs = stmt.executeQuery()) {
-				handleResultSet(rs, writer);
+				handleResultSet(rs, writer, uuid);
 			}
 		} catch(SQLException sqle) {
 			sqle.printStackTrace();
@@ -167,7 +181,8 @@ public class Index extends Controller {
 		return ok(new File(filePathString)).as("UTF-8").as("text/csv");
 	}
 	
-	private void handleResultSet(ResultSet rs, BufferedWriter writer) throws SQLException, IOException {
+	private void handleResultSet(ResultSet rs, BufferedWriter writer, String uuid) throws SQLException, IOException {
+		Logger.info("writing file: " + uuid);
 		ResultSetMetaData rsm = rs.getMetaData();
 		for(Integer i = 1; i < rsm.getColumnCount() + 1; i++) {
 			writer.write("\"" + rsm.getColumnName(i) + "\";");
