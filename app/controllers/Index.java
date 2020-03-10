@@ -14,14 +14,15 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
@@ -84,64 +85,21 @@ public class Index extends Controller {
 			}
 		};
 		
-		final ScheduledFuture<?> removeFilesHandle =
-				Executors.newScheduledThreadPool(1)
-					.scheduleAtFixedRate(removeFiles, 1, 30, TimeUnit.MINUTES);
-	}
-	
-	private void removeRedundantFiles() {
-		Logger.info("checking redundant files...");
-		Path list = Paths.get("/opt/csvs");
-		try {
-			Files.list(list)
-				.filter(path -> fileShouldBeRemoved(path))
-				.forEach(path -> removeRedundantFile(path));
-		} catch (IOException ioe) {
-			ioe.printStackTrace();
-		}
-	}
-	
-	private boolean fileShouldBeRemoved(Path path) {
-		try {
-			ZonedDateTime fileTime = ZonedDateTime.ofInstant(
-					Files.getLastModifiedTime(path).toInstant(), ZoneId.of(timeZone));
-			
-			ZonedDateTime now = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of(timeZone));
-			
-			Duration d = Duration.between(fileTime, now);
-			long ageOfFileInMinutes = d.toMinutes();
-			
-			Logger.info("file " + path.getFileName() + " is " + ageOfFileInMinutes + " minutes old");
-			
-			return ageOfFileInMinutes > 60;
-		} catch (IOException ioe) {
-			ioe.printStackTrace();
-			return false;
-		}
-	}
-	
-	private void removeRedundantFile(Path path) {
-		try {
-			Logger.info("file to be removed: " + path.getFileName());
-			
-			Files.delete(path);
-		} catch (IOException ioe) {
-			ioe.printStackTrace();
-		}
+		Executors.newScheduledThreadPool(1).scheduleAtFixedRate(removeFiles, 1, 30, TimeUnit.MINUTES);
 	}
 	
 	public Result index() {
 		LocalDateTime now = LocalDateTime.now();
 		String dateTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
 		
-		String dateSinceParam = request().getQueryString("date_since");
-		String dateBeforeParam = request().getQueryString("date_before");
+		String dateStartParam = request().getQueryString("date_start");
+		String dateEndParam = request().getQueryString("date_end");
 		
-		Logger.info("dateSinceParam: " + dateSinceParam);
-		Logger.info("dateBeforeParam: " + dateBeforeParam);
+		Logger.info("the date start param is: " + dateStartParam);
+		Logger.info("the date end param is: " + dateEndParam);
 		
 		String sql = sqlTemplate;
-		if((dateSinceParam == null || dateBeforeParam == null) && whereClause != null) {
+		if((dateStartParam == null || dateEndParam == null) && whereClause != null) {
 			sql = sqlTemplate.replace(whereClause, "");
 		}
 		
@@ -156,9 +114,9 @@ public class Index extends Controller {
 		) {
 			Logger.info("auto commit: " + connection.getAutoCommit());
 			
-			if(dateSinceParam != null && dateBeforeParam != null && whereClause != null) {
-				stmt.setString(1, dateSinceParam);
-				stmt.setString(2, dateBeforeParam);
+			if(dateStartParam != null && dateEndParam != null && whereClause != null) {
+				stmt.setTimestamp(1, convertStringToTimestamp(dateStartParam, false));
+				stmt.setTimestamp(2, convertStringToTimestamp(dateEndParam, true));
 			}
 			
 			stmt.setFetchSize(100000);
@@ -167,10 +125,12 @@ public class Index extends Controller {
 			try(ResultSet rs = stmt.executeQuery()) {
 				handleResultSet(rs, writer, uuid);
 			}
-		} catch(SQLException sqle) {
-			sqle.printStackTrace();
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
+		} catch(SQLException sqle) {
+			sqle.printStackTrace();
+		} catch (RuntimeException re) {
+			re.printStackTrace();
 		}
 		
 		response().setContentType("text/csv; charset=utf-8");
@@ -216,6 +176,53 @@ public class Index extends Controller {
 		} else {
 			String text = "\"" + o + "\";";
 			writer.write(text);
+		}
+	}
+	
+	private Timestamp convertStringToTimestamp(String dateAsString, boolean endDate) {
+		LocalDate parsedDate = LocalDate.parse(dateAsString, DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+		LocalDate actualDate = endDate ? parsedDate.plusDays(1) : parsedDate;
+		return Timestamp.valueOf(actualDate.atStartOfDay());
+	}
+	
+	private void removeRedundantFiles() {
+		Logger.info("checking redundant files...");
+		Path list = Paths.get("/opt/csvs");
+		try {
+			Files.list(list)
+				.filter(path -> fileShouldBeRemoved(path))
+				.forEach(path -> removeRedundantFile(path));
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
+	}
+	
+	private boolean fileShouldBeRemoved(Path path) {
+		try {
+			ZonedDateTime fileTime = ZonedDateTime.ofInstant(
+					Files.getLastModifiedTime(path).toInstant(), ZoneId.of(timeZone));
+			
+			ZonedDateTime now = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of(timeZone));
+			
+			Duration d = Duration.between(fileTime, now);
+			long ageOfFileInMinutes = d.toMinutes();
+			
+			Logger.info("file " + path.getFileName() + " is " + ageOfFileInMinutes + " minutes old");
+			
+			return ageOfFileInMinutes > 60;
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+			return false;
+		}
+	}
+	
+	private void removeRedundantFile(Path path) {
+		try {
+			Logger.info("file to be removed: " + path.getFileName());
+			
+			Files.delete(path);
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
 		}
 	}
 }
