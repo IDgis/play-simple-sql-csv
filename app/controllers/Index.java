@@ -119,18 +119,22 @@ public class Index extends Controller {
 				stmt.setTimestamp(2, convertStringToTimestamp(dateEndParam, true));
 			}
 			
-			stmt.setFetchSize(100000);
+			stmt.setFetchSize(5000);
 			
 			Logger.info("executing query for: " + uuid);
+			Logger.info("free memory before query: " + Runtime.getRuntime().freeMemory());
 			try(ResultSet rs = stmt.executeQuery()) {
+				Logger.info("free memory after query: " + Runtime.getRuntime().freeMemory());
 				handleResultSet(rs, writer, uuid);
 			}
-		} catch (IOException ioe) {
+		} catch(IOException ioe) {
 			ioe.printStackTrace();
 		} catch(SQLException sqle) {
 			sqle.printStackTrace();
-		} catch (RuntimeException re) {
+		} catch(RuntimeException re) {
 			re.printStackTrace();
+		} catch(OutOfMemoryError oome) {
+			oome.printStackTrace();
 		}
 		
 		response().setContentType("text/csv; charset=utf-8");
@@ -138,11 +142,14 @@ public class Index extends Controller {
 				"Content-Disposition", "attachment; filename=\"" + 
 				filenamePrefix + dateTime + ".csv\"");
 		
+		Logger.info("returning file: " + uuid);
+		
 		return ok(new File(filePathString)).as("UTF-8").as("text/csv");
 	}
 	
 	private void handleResultSet(ResultSet rs, BufferedWriter writer, String uuid) throws SQLException, IOException {
 		Logger.info("writing file: " + uuid);
+		Logger.info("free memory before writing: " + Runtime.getRuntime().freeMemory());
 		ResultSetMetaData rsm = rs.getMetaData();
 		for(Integer i = 1; i < rsm.getColumnCount() + 1; i++) {
 			writer.write("\"" + rsm.getColumnName(i) + "\";");
