@@ -6,6 +6,10 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -34,14 +38,19 @@ import play.mvc.Controller;
 import play.mvc.Result;
 
 public class Index extends Controller {
-	
 	private final String timeZone;
 	
 	private String whereClause;
 	
 	private final String filenamePrefix;
 	
+	private final boolean isRequestExtraInfo;
+	
 	private final String sqlTemplate;
+	
+	private final String pythonCommand;
+	
+	private final String pythonFile;
 	
 	@Inject
 	public Index(Configuration config) {
@@ -75,6 +84,9 @@ public class Index extends Controller {
 			throw new RuntimeException("couldn't read sql file", e);
 		}
 		
+		isRequestExtraInfo = Boolean.parseBoolean(config.getString("report.isrequestextrainfo"));
+		Logger.info("isRequestExtraInfo: " + isRequestExtraInfo);
+		
 		sqlTemplate = sqlTemplateBuilder.toString();
 		
 		final Runnable removeFiles = () -> {
@@ -84,6 +96,12 @@ public class Index extends Controller {
 				e.printStackTrace();
 			}
 		};
+		
+		pythonCommand = config.getString("report.python.command");
+		pythonFile = config.getString("report.python.file");
+		
+		Logger.info("pythonCommand is: " + pythonCommand);
+		Logger.info("pythonFile is: " + pythonFile);
 		
 		Executors.newScheduledThreadPool(1).scheduleAtFixedRate(removeFiles, 1, 30, TimeUnit.MINUTES);
 	}
@@ -142,9 +160,70 @@ public class Index extends Controller {
 				"Content-Disposition", "attachment; filename=\"" + 
 				filenamePrefix + dateTime + ".csv\"");
 		
+		if(isRequestExtraInfo) {
+			Logger.info("removing double rows");
+			String filePathCondensedString = "/opt/csvs/" + uuid + "_condensed.csv";
+			
+			runPythonScript(filePathString, filePathCondensedString);
+			
+			return ok(new File(filePathCondensedString)).as("UTF-8").as("text/csv");
+		}
+		
 		Logger.info("returning file: " + uuid);
 		
 		return ok(new File(filePathString)).as("UTF-8").as("text/csv");
+	}
+	
+	private void runPythonScript(String inputFile, String outputFile) {
+		try {
+			String pythonExec = 
+					pythonCommand
+						.concat(" ")
+						.concat(pythonFile)
+						.concat(" ")
+						.concat(inputFile)
+						.concat(" ")
+						.concat(outputFile);
+			
+			Logger.info("python exec: {}", pythonExec);
+			
+			Process process = Runtime.getRuntime().exec(pythonExec);
+			InputStream inputStream = process.getInputStream();
+			String inputContent = getInputStreamContent(inputStream);
+			if(inputContent != null && inputContent.trim().length() > 0) {
+				Logger.info("input is: {}", inputContent);
+			}
+			
+			InputStream errorStream = process.getErrorStream();
+			String errorContent = getInputStreamContent(errorStream);
+			if(errorContent != null && errorContent.trim().length() > 0) {
+				Logger.info("error is: {}", errorContent);
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private String getInputStreamContent(InputStream inputStream) {
+		int bufferSize = 1024;
+		char[] buffer = new char[bufferSize];
+		StringBuilder out = new StringBuilder();
+		
+		try(Reader in = new InputStreamReader(inputStream, StandardCharsets.UTF_8);) {
+			for (int numRead; (numRead = in.read(buffer, 0, buffer.length)) > 0; ) {
+				out.append(buffer, 0, numRead);
+			}
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		} finally {
+			try {
+				inputStream.close();
+			} catch (IOException ioe) {
+				ioe.printStackTrace();
+			}
+		}
+		
+		return out.toString();
 	}
 	
 	private void handleResultSet(ResultSet rs, BufferedWriter writer, String uuid) throws SQLException, IOException {
