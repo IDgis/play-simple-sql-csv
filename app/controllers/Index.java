@@ -28,6 +28,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import javax.inject.Inject;
 
@@ -44,7 +45,7 @@ public class Index extends Controller {
 	
 	private final String filenamePrefix;
 	
-	private final boolean isRequestExtraInfo;
+	private final boolean runRemoveDoubleExtraInfo;
 	
 	private final String sqlTemplate;
 	
@@ -84,8 +85,8 @@ public class Index extends Controller {
 			throw new RuntimeException("couldn't read sql file", e);
 		}
 		
-		isRequestExtraInfo = Boolean.parseBoolean(config.getString("report.isrequestextrainfo"));
-		Logger.info("isRequestExtraInfo: " + isRequestExtraInfo);
+		runRemoveDoubleExtraInfo = Boolean.parseBoolean(config.getString("report.runremovedoubleextrainfo"));
+		Logger.info("runRemoveDoubleExtraInfo: " + runRemoveDoubleExtraInfo);
 		
 		sqlTemplate = sqlTemplateBuilder.toString();
 		
@@ -103,13 +104,10 @@ public class Index extends Controller {
 		Logger.info("pythonCommand is: " + pythonCommand);
 		Logger.info("pythonFile is: " + pythonFile);
 		
-		Executors.newScheduledThreadPool(1).scheduleAtFixedRate(removeFiles, 1, 30, TimeUnit.MINUTES);
+		Executors.newScheduledThreadPool(1).scheduleAtFixedRate(removeFiles, 30, 30, TimeUnit.MINUTES);
 	}
 	
 	public Result index() {
-		LocalDateTime now = LocalDateTime.now();
-		String dateTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
-		
 		String dateStartParam = request().getQueryString("date_start");
 		String dateEndParam = request().getQueryString("date_end");
 		
@@ -155,12 +153,15 @@ public class Index extends Controller {
 			oome.printStackTrace();
 		}
 		
+		LocalDateTime now = LocalDateTime.now();
+		String dateTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
+		
 		response().setContentType("text/csv; charset=utf-8");
 		response().setHeader(
 				"Content-Disposition", "attachment; filename=\"" + 
 				filenamePrefix + dateTime + ".csv\"");
 		
-		if(isRequestExtraInfo) {
+		if(runRemoveDoubleExtraInfo) {
 			Logger.info("removing double rows");
 			String filePathCondensedString = "/opt/csvs/" + uuid + "_condensed.csv";
 			
@@ -274,10 +275,10 @@ public class Index extends Controller {
 	private void removeRedundantFiles() {
 		Logger.info("checking redundant files...");
 		Path list = Paths.get("/opt/csvs");
-		try {
-			Files.list(list)
-				.filter(path -> fileShouldBeRemoved(path))
-				.forEach(path -> removeRedundantFile(path));
+		try(Stream<Path> paths = Files.list(list);) {
+			paths
+				.filter(this::fileShouldBeRemoved)
+				.forEach(this::removeRedundantFile);
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 		}
@@ -295,7 +296,7 @@ public class Index extends Controller {
 			
 			Logger.info("file " + path.getFileName() + " is " + ageOfFileInMinutes + " minutes old");
 			
-			return ageOfFileInMinutes > 60;
+			return ageOfFileInMinutes > 300;
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 			return false;
